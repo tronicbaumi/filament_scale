@@ -26,11 +26,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
- #include <SPI.h>
+
+#include <SPI.h>
 #include <SD.h>
 #include <Wire.h>
-
 #include "HX711.h"
+
 // HX711 circuit wiring
 const int LOADCELL_DOUT_PIN = 9;
 const int LOADCELL_SCK_PIN = 8;
@@ -41,12 +42,9 @@ HX711 scale;
 #include <LiquidCrystal_I2C.h>
 // Set the LCD address to 0x27 for a 16 chars and 2 line display
 LiquidCrystal_I2C lcd(0x27, 16, 2);
- 
 
 #include "RTClib.h"
 RTC_DS1307 RTC; // define the Real Time Clock object
-
-
 
 // for the data logging shield, we use digital pin 10 for the SD cs line
 const int SD_CS = 10;
@@ -55,87 +53,78 @@ const int SD_CS = 10;
 File logfile;
 
 String CSVline;
-String header = "date,time,voltage,temperature,supplyvoltage";
+String header = "date,time,remainingWeight";
 
-void error(char *str)
-{
+const unsigned long writeInterval = 1200000 ; // 20 minutes in milliseconds
+unsigned long lastWriteTime = 0; // Store the last write time
+
+void error(char *str) {
     Serial.print("error: ");
     Serial.println(str);
-    // red LED indicates error
-    //digitalWrite(redLEDpin, HIGH);
-    while(1);
+    while (1); // Loop forever on error
 }
 
-void setup()
-{
+void setup() {
+    Serial.begin(9600);
+    Serial.println("Serial OK");
 
-  Serial.begin(9600);
-  Serial.println("Serial OK");
+    pinMode(buttonPin, INPUT);
 
-  pinMode(buttonPin, INPUT);
-
-   // initialize the SD card
+    // Initialize the SD card
     Serial.print("Initializing SD card...");
-    // make sure that the default chip select pin is set to
-    // output, even if you don't use it:
     pinMode(SD_CS, OUTPUT);
     
     // see if the card is present and can be initialized:
     if (!SD.begin(SD_CS)) {
-      error("Card failed, or not present");
+        error("Card failed, or not present");
     }
     Serial.println("card initialized.");
     
-    // create a new file
+    // Create a new file
     char filename[] = "LOGGER00.CSV";
     for (uint8_t i = 0; i < 100; i++) {
-      filename[6] = i/10 + '0';
-      filename[7] = i%10 + '0';
-      if (!SD.exists(filename)) {
-        // only open a new file if it doesn't exist
-        logfile = SD.open(filename, FILE_WRITE); 
-        break;  // leave the loop!
-      }
+        filename[6] = i / 10 + '0';
+        filename[7] = i % 10 + '0';
+        if (!SD.exists(filename)) {
+            // only open a new file if it doesn't exist
+            logfile = SD.open(filename, FILE_WRITE); 
+            break;  // leave the loop!
+        }
     }
     
-    if (! logfile) {
-      error("couldnt create file");
+    if (!logfile) {
+        error("couldn't create file");
     }
     
     Serial.print("Logging to: ");
     Serial.println(filename);
 
-
-
-
-      // connect to RTC
+    // Connect to RTC
     Wire.begin();  
     if (!RTC.begin()) {
-      Serial.println("RTC failed");
-    }
-    else{
-      Serial.println("RTC OK");
-    //  RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        Serial.println("RTC failed");
+    } else {
+        Serial.println("RTC OK");
     }
 
-  lcd.begin();
-  lcd.backlight();
-  lcd.setCursor(0,0);
-  lcd.print("                ");
-  lcd.setCursor(1,0);
-  lcd.print("DataLogger");
-  lcd.setCursor(1,1);
-  lcd.print("(c) ChB 2024");
+    lcd.begin();
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("                ");
+    lcd.setCursor(1, 0);
+    lcd.print("DataLogger");
+    lcd.setCursor(1, 1);
+    lcd.print("(c) ChB 2024");
 
-  Serial.println("Initializing the scale");
+    Serial.println("Initializing the scale");
 
-  // Initialize library with data output pin, clock input pin and gain factor.
+    // Initialize library with data output pin, clock input pin and gain factor.
   // Channel selection is made by passing the appropriate gain:
   // - With a gain factor of 64 or 128, channel A is selected
   // - With a gain factor of 32, channel B is selected
   // By omitting the gain factor parameter, the library
   // default "128" (Channel A) is used here.
-  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+    scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
   Serial.println("Before setting up the scale:");
   Serial.print("read: \t\t");
@@ -173,37 +162,30 @@ void setup()
 
 
 
-  delay(2000);
+    delay(2000);
 }
 
-void loop()
-{ static float errorValue = 480;
-  static float targetWeight;
-  static float currentWeight;
-  static float remainingWeight;
-  static bool buttonState = false;
-  static bool lastButtonState = false;
+void loop() {
+    static float errorValue = 480;
+    static float targetWeight = 0;
+    static float currentWeight = 0;
+    static float remainingWeight = 0;
+    static bool buttonState = false;
+    static bool lastButtonState = false;
 
-  int value = digitalRead(buttonPin);
-  buttonState = (value == 0); // Button pressed when LOW
+    int value = digitalRead(buttonPin);
+    buttonState = (value == 0); // Button pressed when LOW
 
-  if (buttonState && !lastButtonState)
-      {
-
-          targetWeight = 1000.0 + abs( currentWeight); // Set target weight to 1000 when button is pressed
-          Serial.print("buttonPressed:");
-          Serial.println(targetWeight);
-          Serial.print("approxweight:");
-          Serial.print(scale.get_units(5) -errorValue);
-      }
+    if (buttonState && !lastButtonState) {
+        targetWeight = 1000.0 + abs(currentWeight); // Set target weight to 1000 when button is pressed
+        Serial.print("buttonPressed: ");
+        Serial.println(targetWeight);
+    }
 
     lastButtonState = buttonState; // Update lastButtonState
+    currentWeight = scale.get_units(5) - errorValue;
+    remainingWeight = targetWeight - currentWeight;
 
-  
-  lastButtonState = buttonState;
-  currentWeight = scale.get_units(5) -errorValue;
-  remainingWeight = targetWeight - currentWeight;
-  
   Serial.print("ValueButton:");
   Serial.println(value);
 
@@ -221,29 +203,50 @@ void loop()
 
 
   // fetch the time
-  DateTime now = RTC.now();
-  
- 
-  Serial.print(now.hour());
-  Serial.print(":");
-  Serial.print(now.minute());
-  Serial.print(":");
-  Serial.println(now.second());
+    DateTime now = RTC.now();
+    
+    // Print time to Serial
+    Serial.print(now.hour());
+    Serial.print(":");
+    Serial.print(now.minute());
+    Serial.print(":");
+    Serial.println(now.second());
 
-  lcd.setCursor(0,1);
-  
-  lcd.print(now.hour());
-  lcd.print(":");
-  lcd.print(now.minute());
-  lcd.print(":");
-  lcd.print(now.second());
+    // Display time on LCD
+    lcd.setCursor(0, 1);
+    lcd.print(now.hour());
+    lcd.print(":");
+    lcd.print(now.minute());
+    lcd.print(":");
+    lcd.print(now.second());
 
-  lcd.setCursor(9,1);
-  lcd.print("       ");
-  lcd.setCursor(10,1);
-  lcd.print(remainingWeight,1);
-  //lcd.print(scale.get_units(5)-478.6,2);
-  
+    lcd.setCursor(9, 1);
+    lcd.print("       ");
+    lcd.setCursor(10, 1);
+    lcd.print(remainingWeight, 1);
 
-  delay(3000);
+    // Check if 20 minutes have passed
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastWriteTime >= writeInterval) {
+        // Write to SD card
+        Serial.println("WritingData to SD Card:");
+        logfile = SD.open("LOGGER00.CSV", FILE_WRITE);
+        if (logfile) {
+            logfile.print(now.hour());
+            logfile.print(":");
+            logfile.print(now.minute());
+            logfile.print(":");
+            logfile.print(now.second());
+            logfile.print(",");
+            logfile.print(remainingWeight);
+            logfile.println();
+            logfile.close(); // Close the file
+            Serial.println("Data written to file.");
+        } else {
+            Serial.println("Error opening file!");
+        }
+        lastWriteTime = currentMillis; // Update the last write time
+    }
+
+    delay(3000); // Delay for readability
 }
