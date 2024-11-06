@@ -34,6 +34,8 @@
 // HX711 circuit wiring
 const int LOADCELL_DOUT_PIN = 9;
 const int LOADCELL_SCK_PIN = 8;
+const int buttonPin = 7; // digital input pin 7 for button
+bool buttonPressed = false;
 HX711 scale;
 
 #include <LiquidCrystal_I2C.h>
@@ -66,9 +68,11 @@ void error(char *str)
 
 void setup()
 {
+
   Serial.begin(9600);
   Serial.println("Serial OK");
 
+  pinMode(buttonPin, INPUT);
 
    // initialize the SD card
     Serial.print("Initializing SD card...");
@@ -111,7 +115,7 @@ void setup()
     }
     else{
       Serial.println("RTC OK");
-      RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    //  RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
     }
 
   lcd.begin();
@@ -121,7 +125,7 @@ void setup()
   lcd.setCursor(1,0);
   lcd.print("DataLogger");
   lcd.setCursor(1,1);
-  lcd.print("(c) ChB 2021");
+  lcd.print("(c) ChB 2024");
 
   Serial.println("Initializing the scale");
 
@@ -173,8 +177,35 @@ void setup()
 }
 
 void loop()
-{
+{ static float errorValue = 480;
+  static float targetWeight;
+  static float currentWeight;
+  static float remainingWeight;
+  static bool buttonState = false;
+  static bool lastButtonState = false;
 
+  int value = digitalRead(buttonPin);
+  buttonState = (value == 0); // Button pressed when LOW
+
+  if (buttonState && !lastButtonState)
+      {
+
+          targetWeight = 1000.0 + abs( currentWeight); // Set target weight to 1000 when button is pressed
+          Serial.print("buttonPressed:");
+          Serial.println(targetWeight);
+          Serial.print("approxweight:");
+          Serial.print(scale.get_units(5) -errorValue);
+      }
+
+    lastButtonState = buttonState; // Update lastButtonState
+
+  
+  lastButtonState = buttonState;
+  currentWeight = scale.get_units(5) -errorValue;
+  remainingWeight = targetWeight - currentWeight;
+  
+  Serial.print("ValueButton:");
+  Serial.println(value);
 
   // Serial.print("one reading:\t");
   // Serial.print(scale.get_units(), 1);
@@ -200,12 +231,18 @@ void loop()
   Serial.println(now.second());
 
   lcd.setCursor(0,1);
-  lcd.print(now.hour());lcd.print(":");lcd.print(now.minute());lcd.print(":");lcd.print(now.second());
+  
+  lcd.print(now.hour());
+  lcd.print(":");
+  lcd.print(now.minute());
+  lcd.print(":");
+  lcd.print(now.second());
 
   lcd.setCursor(9,1);
   lcd.print("       ");
   lcd.setCursor(10,1);
-  lcd.print(scale.get_units(5)-478.6,1);
+  lcd.print(remainingWeight,1);
+  //lcd.print(scale.get_units(5)-478.6,2);
   
 
   delay(3000);
