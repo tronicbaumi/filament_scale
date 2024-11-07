@@ -55,7 +55,7 @@ File logfile;
 String CSVline;
 String header = "date,time,remainingWeight";
 
-const unsigned long writeInterval = 12 ; // 1 minutes in milliseconds
+const unsigned long writeInterval = 1200000 ; //v 20 minutes in miliseconds
 unsigned long lastWriteTime = 0; // Store the last write time
 
 void error(char *str) {
@@ -108,9 +108,10 @@ void setup() {
 }
 
 void loop() {
-    static float errorValue = 480;
+    static float errorValue = 1017+480.04;
     static float targetWeight = 0;
     static float currentWeight = 0;
+    static bool buttonPressed = false;
     static float remainingWeight = 0;
     static bool buttonState = false;
     static bool lastButtonState = false;
@@ -119,6 +120,7 @@ void loop() {
     buttonState = (value == 0); // Button pressed when LOW
 
     if (buttonState && !lastButtonState) {
+        buttonPressed = true; // Set flag when button is pressed
         targetWeight = 1000.0 +(1000-currentWeight); // Set target weight to 1000 when button is pressed
         Serial.print("buttonPressed: ");
         Serial.println(targetWeight);
@@ -126,8 +128,13 @@ void loop() {
 
     lastButtonState = buttonState; // Update lastButtonState
     currentWeight = scale.get_units(5) - errorValue;
-    remainingWeight = targetWeight - (1000-currentWeight);
-
+    if (buttonPressed) {
+        remainingWeight = targetWeight - (1000 - currentWeight);
+      } else {
+        remainingWeight = currentWeight; // Show current weight when button hasn't been pressed
+      }
+    Serial.print("Measured Weight:");
+    Serial.println(remainingWeight);
     // Fetch the time
     DateTime now = RTC.now();
 
@@ -137,8 +144,8 @@ void loop() {
     filename += String(now.day(), DEC);
     filename += String(now.month(), DEC);
     filename += String(now.year(), DEC) + ".csv";
-    Serial.print("Generated Filename: ");
-    Serial.println(filename);  // Print the full filename to the serial monitor
+    //Serial.print("Generated Filename: ");
+    //Serial.println(filename);  // Print the full filename to the serial monitor
 
     
     // Print time to Serial
