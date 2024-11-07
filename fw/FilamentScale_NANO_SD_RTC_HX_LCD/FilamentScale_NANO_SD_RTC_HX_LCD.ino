@@ -55,7 +55,7 @@ File logfile;
 String CSVline;
 String header = "date,time,remainingWeight";
 
-const unsigned long writeInterval = 1200000 ; // 20 minutes in milliseconds
+const unsigned long writeInterval = 12 ; // 1 minutes in milliseconds
 unsigned long lastWriteTime = 0; // Store the last write time
 
 void error(char *str) {
@@ -79,32 +79,15 @@ void setup() {
         error("Card failed, or not present");
     }
     Serial.println("card initialized.");
+  
     
-    // Create a new file
-    char filename[] = "LOGGER00.CSV";
-    for (uint8_t i = 0; i < 100; i++) {
-        filename[6] = i / 10 + '0';
-        filename[7] = i % 10 + '0';
-        if (!SD.exists(filename)) {
-            // only open a new file if it doesn't exist
-            logfile = SD.open(filename, FILE_WRITE); 
-            break;  // leave the loop!
-        }
-    }
-    
-    if (!logfile) {
-        error("couldn't create file");
-    }
-    
-    Serial.print("Logging to: ");
-    Serial.println(filename);
-
     // Connect to RTC
     Wire.begin();  
     if (!RTC.begin()) {
         Serial.println("RTC failed");
     } else {
         Serial.println("RTC OK");
+        RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));  // Sync RTC time to compile time
     }
 
     lcd.begin();
@@ -119,49 +102,8 @@ void setup() {
     Serial.println("Initializing the scale");
 
     // Initialize library with data output pin, clock input pin and gain factor.
-  // Channel selection is made by passing the appropriate gain:
-  // - With a gain factor of 64 or 128, channel A is selected
-  // - With a gain factor of 32, channel B is selected
-  // By omitting the gain factor parameter, the library
-  // default "128" (Channel A) is used here.
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-
-  Serial.println("Before setting up the scale:");
-  Serial.print("read: \t\t");
-  Serial.println(scale.read());			// print a raw reading from the ADC
-
-  Serial.print("read average: \t\t");
-  Serial.println(scale.read_average(20));  	// print the average of 20 readings from the ADC
-
-  Serial.print("get value: \t\t");
-  Serial.println(scale.get_value(5));		// print the average of 5 readings from the ADC minus the tare weight (not set yet)
-
-  Serial.print("get units: \t\t");
-  Serial.println(scale.get_units(5), 1);	// print the average of 5 readings from the ADC minus tare weight (not set) divided
-						// by the SCALE parameter (not set yet)
-
-  scale.set_scale(437.f);    // this value is obtained by calibrating the scale with known weights; see the README for details
-  //scale.tare();				        // reset the scale to 0
-
-  Serial.println("After setting up the scale:");
-
-  Serial.print("read: \t\t");
-  Serial.println(scale.read());                 // print a raw reading from the ADC
-
-  Serial.print("read average: \t\t");
-  Serial.println(scale.read_average(20));       // print the average of 20 readings from the ADC
-
-  Serial.print("get value: \t\t");
-  Serial.println(scale.get_value(5));		// print the average of 5 readings from the ADC minus the tare weight, set with tare()
-
-  Serial.print("get units: \t\t");
-  Serial.println(scale.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
-						// by the SCALE parameter set with set_scale
-
-  Serial.println("Readings:");
-
-
-
+    scale.set_scale(437.f); // this value is obtained by calibrating the scale with known weights
     delay(2000);
 }
 
@@ -177,33 +119,27 @@ void loop() {
     buttonState = (value == 0); // Button pressed when LOW
 
     if (buttonState && !lastButtonState) {
-        targetWeight = 1000.0 + abs(currentWeight); // Set target weight to 1000 when button is pressed
+        targetWeight = 1000.0 +(1000-currentWeight); // Set target weight to 1000 when button is pressed
         Serial.print("buttonPressed: ");
         Serial.println(targetWeight);
     }
 
     lastButtonState = buttonState; // Update lastButtonState
     currentWeight = scale.get_units(5) - errorValue;
-    remainingWeight = targetWeight - currentWeight;
+    remainingWeight = targetWeight - (1000-currentWeight);
 
-  Serial.print("ValueButton:");
-  Serial.println(value);
-
-  // Serial.print("one reading:\t");
-  // Serial.print(scale.get_units(), 1);
-  // Serial.print("\t| average:\t");
-  // Serial.println(scale.get_units(10), 1);
-
-  //Serial.print("one reading:\t");
-  //Serial.print(scale.get_units(50), 2);
-  Serial.print("\t| average:\t");
-  Serial.println(scale.get_value(5)/437, 2);
-
-  
-
-
-  // fetch the time
+    // Fetch the time
     DateTime now = RTC.now();
+
+
+    // Create the filename using the current date
+    String filename = "";
+    filename += String(now.day(), DEC);
+    filename += String(now.month(), DEC);
+    filename += String(now.year(), DEC) + ".csv";
+    Serial.print("Generated Filename: ");
+    Serial.println(filename);  // Print the full filename to the serial monitor
+
     
     // Print time to Serial
     Serial.print(now.hour());
@@ -230,7 +166,7 @@ void loop() {
     if (currentMillis - lastWriteTime >= writeInterval) {
         // Write to SD card
         Serial.println("WritingData to SD Card:");
-        logfile = SD.open("LOGGER00.CSV", FILE_WRITE);
+        logfile = SD.open(filename, FILE_WRITE); // Open the file for writing
         if (logfile) {
             logfile.print(now.hour());
             logfile.print(":");
